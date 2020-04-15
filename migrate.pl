@@ -135,11 +135,13 @@ $sql_a=qq{select a.rowid,
                    else a.account_type
                  end,
                  a.name,
-                 b.name,c.name,d.name  
-            from accounts as a 
-left outer join accounts as b on b.guid = a.parent_guid 
+                 b.name,c.name,d.name,
+                 m.mnemonic
+            from accounts as a
+left outer join accounts as b on b.guid = a.parent_guid
 left outer join accounts as c on c.guid = b.parent_guid
 left outer join accounts as d on d.guid = c.parent_guid
+left outer join commodities m on m.guid = a.commodity_guid
 		   where a.account_type != 'ROOT'
            order by 1};
 
@@ -225,7 +227,22 @@ while (@row = $sth_a->fetchrow_array)
   print "  " x $level . "    <TYPE>$row[1]</TYPE>\n";
   print "  " x $level . "    <NAME>$row[2]</NAME>\n";
   print "  " x $level . "    <ACCTID>$row[0]</ACCTID>\n";
-  print "  " x $level . "    <CURRID>2</CURRID>\n";
+  print "  " x $level . "    <CURRID>2</CURRID>\n" if ($row[6] =~ "USD");
+  print "  " x $level . "    <CURRID>52</CURRID>\n" if ($row[6] =~ "PLN");
+  print "  " x $level . "    <CURRID>26</CURRID>\n" if ($row[6] =~ "CZK");
+  print "  " x $level . "    <CURRID>59</CURRID>\n" if ($row[6] =~ "THB");
+  print "  " x $level . "    <CURRID>36</CURRID>\n" if ($row[6] =~ "HUF");
+  print "  " x $level . "    <CURRID>50</CURRID>\n" if ($row[6] =~ "PHP");
+  print "  " x $level . "    <CURRID>65</CURRID>\n" if ($row[6] =~ "VND");
+  print "  " x $level . "    <CURRID>40</CURRID>\n" if ($row[6] =~ "INR");
+  print "  " x $level . "    <CURRID>66</CURRID>\n" if ($row[6] =~ "HRK");
+  print "  " x $level . "    <CURRID>67</CURRID>\n" if ($row[6] =~ "BAM");
+  print "  " x $level . "    <CURRID>7</CURRID>\n" if ($row[6] =~ "EUR");
+  print "  " x $level . "    <CURRID>10</CURRID>\n" if ($row[6] =~ "GBP");
+  print "  " x $level . "    <CURRID>46</CURRID>\n" if ($row[6] =~ "MXN");
+  print "  " x $level . "    <CURRID>68</CURRID>\n" if ($row[6] =~ "GEL");
+  print "  " x $level . "    <CURRID>2</CURRID>\n" if ($row[6] !~ "USD");
+
   print "  " x $level . "    <STARTBAL>0.00</STARTBAL>\n";
   print "  " x $level . "    <ACCTPARAMS>\n";
   print "  " x $level . "     <PARAM>\n";
@@ -294,10 +311,14 @@ $sql_s=qq{SELECT t.post_date,
                   when 'n' then ' '
                   when 'c' then 'x'
                   when 'y' then 'X'
-                 end,                 
+                 end,
                  case a.account_type
-                   when 'EQUITY' then ROUND((s.value_num / -100.0), 2)
-                   else ROUND((s.value_num / 100.0), 2)
+                   when 'EQUITY' then ROUND((s.value_num*1.0 / -value_denom), 2)
+                   else ROUND((s.value_num*1.0 / value_denom), 2)
+                 end,
+                 case a.account_type
+                   when 'EQUITY' then ROUND((s.quantity_num*1.0 / -quantity_denom), 2)
+                   else ROUND((s.quantity_num*1.0 / quantity_denom), 2)
                  end
             FROM accounts as a, splits as s, transactions as t
            WHERE a.guid = s.account_guid
@@ -329,7 +350,8 @@ while (($transguid, $splitcount) = $sth_p->fetchrow_array)
         $accountcode,
         $accountname,
         $reconciled,
-        $amount) = $sth_s->fetchrow_array)
+        $parent_amount,
+        $parent_quantity) = $sth_s->fetchrow_array)
   {
     # Moneydance uses date formats of the form "2005.10.27 15:10:32:371"
 
@@ -368,7 +390,8 @@ while (($transguid, $splitcount) = $sth_p->fetchrow_array)
             $accountcode,
             $accountname,
             $reconciled,
-            $amount) = $sth_s->fetchrow_array)
+            $amount,
+            $quantity) = $sth_s->fetchrow_array)
     {
       #
       # Build Moneydance Transaction Number on the fly.
@@ -385,7 +408,10 @@ while (($transguid, $splitcount) = $sth_p->fetchrow_array)
                   $memo,
                   $accountcode,
                   $reconciled,
-                  $amount);
+                  $amount,
+                  $quantity,
+                  $parent_amount,
+                  $parent_quantity);
     }
 
     print "   </SPLITS>\n";
@@ -466,18 +492,27 @@ sub split_trans
   my $s_accountcode = shift;
   my $s_reconciled = shift;
   my $s_amount = shift;
+  my $s_quantity = shift;
+  my $s_parent_amount = shift;
+  my $s_parent_quantity = shift;
 
   # Remove spaces from amounts, so the math will work.
   $s_amount =~ s/ //g;
+  $s_quantity =~ s/ //g;
+  $s_parent_amount =~ s/ //g;
+  $s_parent_quantity =~ s/ //g;
 
-  my $parent_amount = -1 * $s_amount;
+  if ($s_parent_amount != $s_parent_quantity) {
+      $s_amount = $s_amount * $s_parent_quantity/$s_parent_amount;
+  }
+
 
   print "    <STXN>\n";
   print "     <TXNID>$s_trans_id</TXNID>\n";
   print "     <ACCTID>$s_accountcode</ACCTID>\n";
   print "     <DESC>$s_description</DESC>\n";
-  printf("     <PARENTAMT>%.2f</PARENTAMT>\n", $parent_amount);
-  printf("     <SPLITAMT>%.2f</SPLITAMT>\n", $s_amount);
+  printf("     <PARENTAMT>%.2f</PARENTAMT>\n", $s_amount * -1);
+  printf("     <SPLITAMT>%.2f</SPLITAMT>\n", $s_quantity);
   print "     <RAWRATE>1</RAWRATE>\n";
   print "     <STATUS>$s_reconciled</STATUS>\n";
   print "     <TAGS>\n";
@@ -1629,6 +1664,98 @@ sub create_header
   print '   <TAGS>' . "\n";
   print '   </TAGS>' . "\n";
   print '  </CURRENCY>' . "\n";
+  print '    <CURRENCY>' . "\n";
+  print '    <CURRID>68</CURRID>' . "\n";
+  print '     <CURRCODE>GEL</CURRCODE>' . "\n";
+  print '      <NAME>Georgian Lari</NAME>' . "\n";
+  print '     <RAWRATE>1</RAWRATE>' . "\n";
+  print '      <DECPLACES>2</DECPLACES>' . "\n";
+  print '     <PREFIX></PREFIX>' . "\n";
+  print '      <SUFFIX></SUFFIX>' . "\n";
+  print '      <TICKER></TICKER>' . "\n";
+  print '      <EFFECTVDATE>2020.04.14</EFFECTVDATE>' . "\n";
+  print '     <CURRTYPE>0</CURRTYPE>' . "\n";
+  print '      <CURRHIST>' . "\n";
+  print '      </CURRHIST>' . "\n";
+  print '     <CURRSPLITS>' . "\n";
+  print '     </CURRSPLITS>' . "\n";
+  print '      <TAGS>' . "\n";
+  print '    <TAG>' . "\n";
+  print '    <KEY>hide_in_ui</KEY>' . "\n";
+  print '       <VAL>n</VAL>' . "\n";
+  print '      </TAG>' . "\n";
+  print '      </TAGS>' . "\n";
+  print '    </CURRENCY>' . "\n";
+  print '      <CURRENCY>' . "\n";
+  print '    <CURRID>67</CURRID>' . "\n";
+  print '     <CURRCODE>BAM</CURRCODE>' . "\n";
+  print '      <NAME>Bosnia-Herzegovina Convertible Mark</NAME>' . "\n";
+  print '     <RAWRATE>1</RAWRATE>' . "\n";
+  print '      <DECPLACES>2</DECPLACES>' . "\n";
+  print '     <PREFIX></PREFIX>' . "\n";
+  print '      <SUFFIX></SUFFIX>' . "\n";
+  print '     <TICKER></TICKER>' . "\n";
+  print '      <EFFECTVDATE>2020.04.14</EFFECTVDATE>' . "\n";
+  print '     <CURRTYPE>0</CURRTYPE>' . "\n";
+  print '      <CURRHIST>' . "\n";
+  print '      </CURRHIST>' . "\n";
+  print '     <CURRSPLITS>' . "\n";
+  print '     </CURRSPLITS>' . "\n";
+  print '      <TAGS>' . "\n";
+  print '    <TAG>' . "\n";
+  print '    <KEY>hide_in_ui</KEY>' . "\n";
+  print '       <VAL>n</VAL>' . "\n";
+  print '      </TAG>' . "\n";
+  print '      </TAGS>' . "\n";
+  print '    </CURRENCY>' . "\n";
+  print '      <CURRENCY>' . "\n";
+  print '    <CURRID>66</CURRID>' . "\n";
+  print '     <CURRCODE>HRK</CURRCODE>' . "\n";
+  print '      <NAME>Croatian Kuna</NAME>' . "\n";
+  print '     <RAWRATE>1</RAWRATE>' . "\n";
+  print '      <DECPLACES>2</DECPLACES>' . "\n";
+  print '     <PREFIX></PREFIX>' . "\n";
+  print '      <SUFFIX></SUFFIX>' . "\n";
+  print '     <TICKER></TICKER>' . "\n";
+  print '      <EFFECTVDATE>2020.04.14</EFFECTVDATE>' . "\n";
+  print '     <CURRTYPE>0</CURRTYPE>' . "\n";
+  print '      <CURRHIST>' . "\n";
+  print '      </CURRHIST>' . "\n";
+  print '     <CURRSPLITS>' . "\n";
+  print '     </CURRSPLITS>' . "\n";
+  print '      <TAGS>' . "\n";
+  print '    <TAG>' . "\n";
+  print '    <KEY>hide_in_ui</KEY>' . "\n";
+  print '       <VAL>n</VAL>' . "\n";
+  print '      </TAG>' . "\n";
+  print '      </TAGS>' . "\n";
+  print '    </CURRENCY>' . "\n";
+  print '      <CURRENCY>' . "\n";
+  print '    <CURRID>65</CURRID>' . "\n";
+  print '     <CURRCODE>VND</CURRCODE>' . "\n";
+  print '      <NAME>Vietnamese Dong</NAME>' . "\n";
+  print '     <RAWRATE>1</RAWRATE>' . "\n";
+  print '      <DECPLACES>2</DECPLACES>' . "\n";
+  print '     <PREFIX></PREFIX>' . "\n";
+  print '      <SUFFIX></SUFFIX>' . "\n";
+  print '     <TICKER></TICKER>' . "\n";
+  print '      <EFFECTVDATE>2020.04.14</EFFECTVDATE>' . "\n";
+  print '     <CURRTYPE>0</CURRTYPE>' . "\n";
+  print '      <CURRHIST>' . "\n";
+  print '      </CURRHIST>' . "\n";
+  print '     <CURRSPLITS>' . "\n";
+  print '     </CURRSPLITS>' . "\n";
+  print '      <TAGS>' . "\n";
+  print '    <TAG>' . "\n";
+  print '    <KEY>hide_in_ui</KEY>' . "\n";
+  print '       <VAL>n</VAL>' . "\n";
+  print '      </TAG>' . "\n";
+  print '      <TAG>' . "\n";
+  print '      <KEY>relative_to_currid</KEY>' . "\n";
+  print '       <VAL>USD</VAL>' . "\n";
+  print '      </TAG>' . "\n";
+  print '      </TAGS>' . "\n";
+  print '    </CURRENCY>' . "\n";
   print ' </CURRENCYLIST>' . "\n";
   print ' <ACCOUNT>' . "\n";
   print '  <TYPE>R</TYPE>' . "\n";
