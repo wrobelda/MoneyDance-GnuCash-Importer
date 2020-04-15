@@ -312,14 +312,8 @@ $sql_s=qq{SELECT t.post_date,
                   when 'c' then 'x'
                   when 'y' then 'X'
                  end,
-                 case a.account_type
-                   when 'EQUITY' then ROUND((s.value_num*1.0 / -value_denom), 2)
-                   else ROUND((s.value_num*1.0 / value_denom), 2)
-                 end,
-                 case a.account_type
-                   when 'EQUITY' then ROUND((s.quantity_num*1.0 / -quantity_denom), 2)
-                   else ROUND((s.quantity_num*1.0 / quantity_denom), 2)
-                 end
+                  ROUND((s.value_num*1.0 / value_denom), 2),
+                  ROUND((s.quantity_num*1.0 / quantity_denom), 2)
             FROM accounts as a, splits as s, transactions as t
            WHERE a.guid = s.account_guid
              AND s.tx_guid = t.guid
