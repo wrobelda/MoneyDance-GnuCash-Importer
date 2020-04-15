@@ -333,10 +333,12 @@ while (($transguid, $splitcount) = $sth_p->fetchrow_array)
   {
     # Moneydance uses date formats of the form "2005.10.27 15:10:32:371"
 
-    $date_entered =~ m/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/;
-	$date_entered = $1.".".$2.".".$3." ".$4.":".$5.":".$6;
-    $date_posted =~ m/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/;	
-    $date_posted = $1.".".$2.".".$3." ".$4.":".$5.":".$6;
+    if ($date_entered =~ m/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/) {
+      $date_entered = $1 . "." . $2 . "." . $3 . " " . $4 . ":" . $5 . ":" . $6;
+    }
+    if ($date_posted =~ m/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/) {
+      $date_posted = $1.".".$2.".".$3." ".$4.":".$5.":".$6;
+    }
 
 
     #
